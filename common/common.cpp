@@ -2061,6 +2061,17 @@ void common_prompt_checkpoint::update_pos(
     this->pos_max  = pos_max;
 }
 
+static llama_state_seq_flags common_prompt_checkpoint_maybe_host_flags(llama_state_seq_flags flags) {
+    // Local workaround for ROCm tensor-parallel meta-backend crashes while
+    // saving/restoring speculative on-device checkpoints. When enabled, keep
+    // checkpoint semantics but store checkpoint tensors in host memory instead
+    // of using llama_io_write_device / llama_io_read_device.
+    if (getenv("LLAMA_CKPT_FORCE_HOST")) {
+        flags &= ~LLAMA_STATE_SEQ_FLAGS_ON_DEVICE;
+    }
+    return flags;
+}
+
 void common_prompt_checkpoint::update_tgt(
         llama_context * ctx,
         llama_seq_id seq_id,
@@ -2068,6 +2079,8 @@ void common_prompt_checkpoint::update_tgt(
     if (ctx == nullptr) {
         return;
     }
+
+    flags = common_prompt_checkpoint_maybe_host_flags(flags);
 
     const size_t ckpt_size = llama_state_seq_get_size_ext(ctx, seq_id, flags);
 
@@ -2087,6 +2100,8 @@ void common_prompt_checkpoint::update_dft(
         return;
     }
 
+    flags = common_prompt_checkpoint_maybe_host_flags(flags);
+
     const size_t ckpt_size = llama_state_seq_get_size_ext(ctx, seq_id, flags);
 
     data_dft.resize(ckpt_size);
@@ -2105,6 +2120,8 @@ void common_prompt_checkpoint::load_tgt(
         return;
     }
 
+    flags = common_prompt_checkpoint_maybe_host_flags(flags);
+
     if (data_tgt.empty()) {
         return;
     }
@@ -2122,6 +2139,8 @@ void common_prompt_checkpoint::load_dft(
     if (ctx == nullptr) {
         return;
     }
+
+    flags = common_prompt_checkpoint_maybe_host_flags(flags);
 
     if (data_dft.empty()) {
         return;
